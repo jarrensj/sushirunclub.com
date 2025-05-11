@@ -1,4 +1,7 @@
 import type React from "react"
+import { Analytics } from "@vercel/analytics/react"
+import { Suspense } from "react"
+
 export const metadata = {
   title: "Sushi Run Club",
   description: "Track your running progress with the Sushi Run Club treadmill simulator",
@@ -42,7 +45,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Suspense>{children}</Suspense>
+        <Analytics />
+      </body>
     </html>
   )
 }
