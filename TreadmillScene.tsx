@@ -6,7 +6,7 @@ import { Center, Environment, OrbitControls } from "@react-three/drei"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card, CardContent } from "@/components/ui/card"
-import { Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings, RotateCcw } from "lucide-react"
+import { Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings } from "lucide-react"
 
 export default function TreadmillScene() {
   const [autoRotate, setAutoRotate] = useState(true)
@@ -185,11 +185,8 @@ export default function TreadmillScene() {
       {/* Distance Tracker */}
       <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
         <CardContent className="p-3 flex flex-col items-end">
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-sm font-medium text-slate-600">Today's Run</h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={resetDistance} title="Reset Distance">
-              <RotateCcw className="h-3 w-3" />
-            </Button>
+          <div className="w-full">
+            <h3 className="text-sm font-medium text-slate-600">Current Run</h3>
           </div>
           <div className="flex flex-col items-end mt-1">
             <div className="flex items-baseline gap-1">
