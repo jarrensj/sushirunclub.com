@@ -171,11 +171,6 @@ export default function TreadmillScene() {
             <div className="absolute inset-0 flex items-center justify-center">
               <Settings className="h-6 w-6 text-slate-600" />
             </div>
-            <div
-              className={`absolute bottom-0 right-0 w-5 h-5 rounded-full ${
-                isRunning ? (speed > 2 ? "bg-red-500" : speed > 1 ? "bg-amber-500" : "bg-blue-500") : "bg-slate-400"
-              }`}
-            />
           </div>
         ) : (
           // Expanded view
@@ -636,12 +631,6 @@ function WalkingTreadmill({ isRunning, speed }) {
       </mesh>
       <mesh position={[0.8, 0.03, 1.8]} rotation={[0, 0, 0]}>
         <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-        <meshStandardMaterial color="#111111" roughness={0.9} />
-      </mesh>
-
-      {/* Power Cable */}
-      <mesh position={[0.9, 0.05, 1.7]} rotation={[0, -Math.PI / 4, 0]}>
-        <cylinderGeometry args={[0.02, 0.02, 0.3, 16]} />
         <meshStandardMaterial color="#111111" roughness={0.9} />
       </mesh>
 
