@@ -6,13 +6,16 @@ import { Center, Environment, OrbitControls } from "@react-three/drei"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card, CardContent } from "@/components/ui/card"
-import { RefreshCw, Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings } from "lucide-react"
+import { RefreshCw, Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings, RotateCcw } from "lucide-react"
 
 export default function TreadmillScene() {
   const [autoRotate, setAutoRotate] = useState(true)
   const [key, setKey] = useState(0) // Used to force re-render and reset position
   const [isRunning, setIsRunning] = useState(true)
   const [speed, setSpeed] = useState(1) // Speed from 0-3
+  const [distance, setDistance] = useState(0) // Distance in kilometers
+  const [startTime, setStartTime] = useState(Date.now())
+  const lastUpdateTimeRef = useRef(Date.now())
 
   const [isDragging, setIsDragging] = useState(false)
   const [isMinimized, setIsMinimized] = useState(true)
@@ -22,6 +25,35 @@ export default function TreadmillScene() {
     y: typeof window !== "undefined" ? window.innerHeight - 80 : 0,
   })
   const panelRef = useRef(null)
+
+  // Update distance based on speed
+  useEffect(() => {
+    if (!isRunning) {
+      lastUpdateTimeRef.current = Date.now()
+      return
+    }
+
+    const intervalId = setInterval(() => {
+      const now = Date.now()
+      const elapsedSeconds = (now - lastUpdateTimeRef.current) / 1000
+
+      // Convert speed (mph) to km/h and calculate distance
+      const speedInKmh = speed * 1.60934
+      const distanceInKm = (speedInKmh * elapsedSeconds) / 3600
+
+      setDistance((prev) => prev + distanceInKm)
+      lastUpdateTimeRef.current = now
+    }, 1000) // Update every second
+
+    return () => clearInterval(intervalId)
+  }, [isRunning, speed])
+
+  // Reset distance and start time
+  const resetDistance = () => {
+    setDistance(0)
+    setStartTime(Date.now())
+    lastUpdateTimeRef.current = Date.now()
+  }
 
   // Update panel position on window resize
   useEffect(() => {
@@ -59,6 +91,7 @@ export default function TreadmillScene() {
   const toggleRunning = () => {
     if (!isRunning) {
       setIsRunning(true)
+      lastUpdateTimeRef.current = Date.now()
       if (speed === 0) setSpeed(1)
     } else {
       setIsRunning(false)
@@ -69,6 +102,9 @@ export default function TreadmillScene() {
     const newSpeed = value[0]
     setSpeed(newSpeed)
     setIsRunning(newSpeed > 0)
+    if (newSpeed > 0 && !isRunning) {
+      lastUpdateTimeRef.current = Date.now()
+    }
   }
 
   const toggleMinimized = () => {
@@ -122,6 +158,27 @@ export default function TreadmillScene() {
     }
   }, [isDragging, isMinimized])
 
+  // Format distance for display
+  const formatDistance = (km) => {
+    if (km < 0.01) {
+      return `${(km * 1000).toFixed(0)} m`
+    } else if (km < 1) {
+      return `${(km * 1000).toFixed(0)} m`
+    } else {
+      return `${km.toFixed(2)} km`
+    }
+  }
+
+  // Calculate elapsed time
+  const getElapsedTime = () => {
+    const elapsedMs = Date.now() - startTime
+    const seconds = Math.floor((elapsedMs / 1000) % 60)
+    const minutes = Math.floor((elapsedMs / (1000 * 60)) % 60)
+    const hours = Math.floor(elapsedMs / (1000 * 60 * 60))
+
+    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+  }
+
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
       <div className="absolute top-4 left-4 z-10 flex gap-2">
@@ -137,6 +194,24 @@ export default function TreadmillScene() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* Distance Tracker */}
+      <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
+        <CardContent className="p-3 flex flex-col items-end">
+          <div className="flex items-center justify-between w-full">
+            <h3 className="text-sm font-medium text-slate-600">Today's Run</h3>
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={resetDistance} title="Reset Distance">
+              <RotateCcw className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="flex flex-col items-end mt-1">
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-bold text-slate-800">{formatDistance(distance)}</span>
+            </div>
+            <div className="text-xs text-slate-500 mt-1">Time: {getElapsedTime()}</div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Draggable Speed Control Panel - Minimized or Expanded */}
       <Card
@@ -226,7 +301,15 @@ export default function TreadmillScene() {
         )}
       </Card>
 
-      <h1 className="absolute top-20 w-full text-center text-5xl font-bold text-slate-800 z-10">Sushi Run Club</h1>
+      {/* Responsive header - different text sizes at different breakpoints */}
+      <h1
+        className="absolute w-full text-center font-bold text-slate-800 z-10 px-4
+                     text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl
+                     top-4 sm:top-8 md:top-12 lg:top-16 xl:top-20"
+      >
+        Sushi Run Club
+      </h1>
+
       <Canvas
         key={key}
         camera={{ position: [0, 2, 5], fov: 45, near: 0.1, far: 1000 }}
