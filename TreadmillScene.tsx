@@ -6,7 +6,7 @@ import { Center, Environment, OrbitControls } from "@react-three/drei"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card, CardContent } from "@/components/ui/card"
-import { RefreshCw, Minus, Plus, Play, Pause, GripVertical } from "lucide-react"
+import { RefreshCw, Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings } from "lucide-react"
 
 export default function TreadmillScene() {
   const [autoRotate, setAutoRotate] = useState(true)
@@ -15,8 +15,28 @@ export default function TreadmillScene() {
   const [speed, setSpeed] = useState(1) // Speed from 0-3
 
   const [isDragging, setIsDragging] = useState(false)
-  const [panelPosition, setPanelPosition] = useState({ x: 4, y: 20 })
+  const [isMinimized, setIsMinimized] = useState(true)
+  // Position panel in bottom right when minimized
+  const [panelPosition, setPanelPosition] = useState({
+    x: typeof window !== "undefined" ? window.innerWidth - 80 : 0,
+    y: typeof window !== "undefined" ? window.innerHeight - 80 : 0,
+  })
   const panelRef = useRef(null)
+
+  // Update panel position on window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (isMinimized) {
+        setPanelPosition({
+          x: window.innerWidth - 80,
+          y: window.innerHeight - 80,
+        })
+      }
+    }
+
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [isMinimized])
 
   // Function to reset the treadmill position
   const resetPosition = () => {
@@ -51,12 +71,38 @@ export default function TreadmillScene() {
     setIsRunning(newSpeed > 0)
   }
 
+  const toggleMinimized = () => {
+    setIsMinimized(!isMinimized)
+
+    // If expanding, move panel to a better position
+    if (isMinimized) {
+      setPanelPosition({
+        x: Math.max(window.innerWidth - 300, 20),
+        y: Math.max(window.innerHeight - 200, 20),
+      })
+    } else {
+      // If minimizing, move to bottom right
+      setPanelPosition({
+        x: window.innerWidth - 80,
+        y: window.innerHeight - 80,
+      })
+    }
+  }
+
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (isDragging && panelRef.current) {
+        // Calculate new position
+        const newX = e.clientX
+        const newY = e.clientY
+
+        // Keep panel within viewport bounds
+        const maxX = window.innerWidth - (isMinimized ? 60 : 280)
+        const maxY = window.innerHeight - (isMinimized ? 60 : 180)
+
         setPanelPosition({
-          x: e.clientX,
-          y: e.clientY,
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY)),
         })
       }
     }
@@ -74,7 +120,7 @@ export default function TreadmillScene() {
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging])
+  }, [isDragging, isMinimized])
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
@@ -92,18 +138,23 @@ export default function TreadmillScene() {
         </Button>
       </div>
 
-      {/* Draggable Speed Control Panel */}
+      {/* Draggable Speed Control Panel - Minimized or Expanded */}
       <Card
         ref={panelRef}
-        className="absolute z-10 w-64 bg-white/90 backdrop-blur-sm shadow-lg cursor-move"
+        className={`absolute z-10 backdrop-blur-sm shadow-lg cursor-move transition-all duration-200 ${
+          isMinimized ? "w-16 h-16 rounded-full bg-white/90" : "w-64 bg-white/90"
+        }`}
         style={{
           left: `${panelPosition.x}px`,
           top: `${panelPosition.y}px`,
           touchAction: "none",
+          transform: isMinimized ? "translate(-50%, -50%)" : "translate(0, 0)",
         }}
         onMouseDown={(e) => {
-          e.preventDefault()
-          setIsDragging(true)
+          if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
+            e.preventDefault()
+            setIsDragging(true)
+          }
         }}
         onTouchStart={(e) => {
           const touch = e.touches[0]
@@ -114,51 +165,70 @@ export default function TreadmillScene() {
           setIsDragging(true)
         }}
       >
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-slate-400" />
-                <h3 className="text-lg font-medium">Treadmill Speed</h3>
+        {isMinimized ? (
+          // Minimized view - just a circular button with speed indicator
+          <div className="w-full h-full flex items-center justify-center relative" onClick={toggleMinimized}>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Settings className="h-6 w-6 text-slate-600" />
+            </div>
+            <div
+              className={`absolute bottom-0 right-0 w-5 h-5 rounded-full ${
+                isRunning ? (speed > 2 ? "bg-red-500" : speed > 1 ? "bg-amber-500" : "bg-blue-500") : "bg-slate-400"
+              }`}
+            />
+          </div>
+        ) : (
+          // Expanded view
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between drag-handle">
+                <div className="flex items-center gap-2">
+                  <GripVertical className="h-4 w-4 text-slate-400" />
+                  <h3 className="text-lg font-medium">Treadmill Speed</h3>
+                </div>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={toggleMinimized}>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
               </div>
+
               <div className="flex items-center gap-1">
                 <span className="text-sm font-medium bg-slate-100 px-2 py-1 rounded">{speed.toFixed(1)} mph</span>
                 <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-green-500" : "bg-red-500"}`}></span>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={decreaseSpeed} disabled={speed <= 0} className="h-8 w-8">
-                <Minus className="h-4 w-4" />
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={decreaseSpeed} disabled={speed <= 0} className="h-8 w-8">
+                  <Minus className="h-4 w-4" />
+                </Button>
+
+                <Slider
+                  value={[speed]}
+                  min={0}
+                  max={3}
+                  step={0.1}
+                  className="flex-1"
+                  onValueChange={handleSliderChange}
+                />
+
+                <Button variant="outline" size="icon" onClick={increaseSpeed} disabled={speed >= 3} className="h-8 w-8">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <Button variant={isRunning ? "destructive" : "default"} className="w-full" onClick={toggleRunning}>
+                {isRunning ? (
+                  <>
+                    <Pause className="h-4 w-4 mr-2" /> Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" /> Start
+                  </>
+                )}
               </Button>
-
-              <Slider
-                value={[speed]}
-                min={0}
-                max={3}
-                step={0.1}
-                className="flex-1"
-                onValueChange={handleSliderChange}
-              />
-
-              <Button variant="outline" size="icon" onClick={increaseSpeed} disabled={speed >= 3} className="h-8 w-8">
-                <Plus className="h-4 w-4" />
-              </Button>
             </div>
-
-            <Button variant={isRunning ? "destructive" : "default"} className="w-full" onClick={toggleRunning}>
-              {isRunning ? (
-                <>
-                  <Pause className="h-4 w-4 mr-2" /> Pause
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" /> Start
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       <h1 className="absolute top-20 w-full text-center text-5xl font-bold text-slate-800 z-10">Sushi Run Club</h1>
