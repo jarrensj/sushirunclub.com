@@ -1,18 +1,22 @@
 "use client"
 
-import { useRef, useState, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Canvas, useThree, useFrame } from "@react-three/fiber"
 import { Center, Environment, OrbitControls } from "@react-three/drei"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card, CardContent } from "@/components/ui/card"
-import { RefreshCw, Minus, Plus, Play, Pause } from "lucide-react"
+import { RefreshCw, Minus, Plus, Play, Pause, GripVertical } from "lucide-react"
 
 export default function TreadmillScene() {
   const [autoRotate, setAutoRotate] = useState(true)
   const [key, setKey] = useState(0) // Used to force re-render and reset position
   const [isRunning, setIsRunning] = useState(true)
   const [speed, setSpeed] = useState(1) // Speed from 0-3
+
+  const [isDragging, setIsDragging] = useState(false)
+  const [panelPosition, setPanelPosition] = useState({ x: 4, y: 20 })
+  const panelRef = useRef(null)
 
   // Function to reset the treadmill position
   const resetPosition = () => {
@@ -47,6 +51,31 @@ export default function TreadmillScene() {
     setIsRunning(newSpeed > 0)
   }
 
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDragging && panelRef.current) {
+        setPanelPosition({
+          x: e.clientX,
+          y: e.clientY,
+        })
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    if (isDragging) {
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isDragging])
+
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
       <div className="absolute top-4 left-4 z-10 flex gap-2">
@@ -63,12 +92,35 @@ export default function TreadmillScene() {
         </Button>
       </div>
 
-      {/* Speed Control Panel - Left Side */}
-      <Card className="absolute top-20 left-4 z-10 w-64 bg-white/90 backdrop-blur-sm shadow-lg">
+      {/* Draggable Speed Control Panel */}
+      <Card
+        ref={panelRef}
+        className="absolute z-10 w-64 bg-white/90 backdrop-blur-sm shadow-lg cursor-move"
+        style={{
+          left: `${panelPosition.x}px`,
+          top: `${panelPosition.y}px`,
+          touchAction: "none",
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault()
+          setIsDragging(true)
+        }}
+        onTouchStart={(e) => {
+          const touch = e.touches[0]
+          setPanelPosition({
+            x: touch.clientX,
+            y: touch.clientY,
+          })
+          setIsDragging(true)
+        }}
+      >
         <CardContent className="p-4">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium">Treadmill Speed</h3>
+              <div className="flex items-center gap-2">
+                <GripVertical className="h-4 w-4 text-slate-400" />
+                <h3 className="text-lg font-medium">Treadmill Speed</h3>
+              </div>
               <div className="flex items-center gap-1">
                 <span className="text-sm font-medium bg-slate-100 px-2 py-1 rounded">{speed.toFixed(1)} mph</span>
                 <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-green-500" : "bg-red-500"}`}></span>
