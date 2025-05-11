@@ -6,7 +6,7 @@ import { Center, Environment, OrbitControls } from "@react-three/drei"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Card, CardContent } from "@/components/ui/card"
-import { RefreshCw, Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings, RotateCcw } from "lucide-react"
+import { Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings, RotateCcw } from "lucide-react"
 
 export default function TreadmillScene() {
   const [autoRotate, setAutoRotate] = useState(true)
@@ -21,8 +21,8 @@ export default function TreadmillScene() {
   const [isMinimized, setIsMinimized] = useState(true)
   // Position panel in bottom right when minimized
   const [panelPosition, setPanelPosition] = useState({
-    x: typeof window !== "undefined" ? window.innerWidth - 80 : 0,
-    y: typeof window !== "undefined" ? window.innerHeight - 80 : 0,
+    x: typeof window !== "undefined" ? window.innerWidth - 60 : 0,
+    y: typeof window !== "undefined" ? window.innerHeight - 60 : 0,
   })
   const panelRef = useRef(null)
 
@@ -60,8 +60,8 @@ export default function TreadmillScene() {
     const handleResize = () => {
       if (isMinimized) {
         setPanelPosition({
-          x: window.innerWidth - 80,
-          y: window.innerHeight - 80,
+          x: window.innerWidth - 60,
+          y: window.innerHeight - 60,
         })
       }
     }
@@ -69,11 +69,6 @@ export default function TreadmillScene() {
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [isMinimized])
-
-  // Function to reset the treadmill position
-  const resetPosition = () => {
-    setKey((prevKey) => prevKey + 1)
-  }
 
   // Handle speed changes
   const increaseSpeed = () => {
@@ -119,8 +114,8 @@ export default function TreadmillScene() {
     } else {
       // If minimizing, move to bottom right
       setPanelPosition({
-        x: window.innerWidth - 80,
-        y: window.innerHeight - 80,
+        x: window.innerWidth - 60,
+        y: window.innerHeight - 60,
       })
     }
   }
@@ -133,8 +128,8 @@ export default function TreadmillScene() {
         const newY = e.clientY
 
         // Keep panel within viewport bounds
-        const maxX = window.innerWidth - (isMinimized ? 60 : 280)
-        const maxY = window.innerHeight - (isMinimized ? 60 : 180)
+        const maxX = window.innerWidth - (isMinimized ? 40 : 280)
+        const maxY = window.innerHeight - (isMinimized ? 40 : 180)
 
         setPanelPosition({
           x: Math.max(0, Math.min(newX, maxX)),
@@ -181,17 +176,9 @@ export default function TreadmillScene() {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
-      <div className="absolute top-4 left-4 z-10 flex gap-2">
+      <div className="absolute top-4 left-4 z-10">
         <Button onClick={() => setAutoRotate(!autoRotate)} variant="outline" className="bg-white/80 backdrop-blur-sm">
           {autoRotate ? "Stop Rotation" : "Start Rotation"}
-        </Button>
-        <Button
-          onClick={resetPosition}
-          variant="outline"
-          className="bg-white/80 backdrop-blur-sm"
-          title="Reset Position"
-        >
-          <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
 
@@ -217,7 +204,7 @@ export default function TreadmillScene() {
       <Card
         ref={panelRef}
         className={`absolute z-10 backdrop-blur-sm shadow-lg cursor-move transition-all duration-200 ${
-          isMinimized ? "w-16 h-16 rounded-full bg-white/90" : "w-64 bg-white/90"
+          isMinimized ? "w-12 h-12 rounded-full bg-white/90" : "w-64 bg-white/90"
         }`}
         style={{
           left: `${panelPosition.x}px`,
@@ -244,7 +231,7 @@ export default function TreadmillScene() {
           // Minimized view - just a circular button with speed indicator
           <div className="w-full h-full flex items-center justify-center relative" onClick={toggleMinimized}>
             <div className="absolute inset-0 flex items-center justify-center">
-              <Settings className="h-6 w-6 text-slate-600" />
+              <Settings className="h-5 w-5 text-slate-600" />
             </div>
           </div>
         ) : (
@@ -351,7 +338,7 @@ function CameraController({ autoRotate }) {
       enableZoom={false} // Disable zoom to prevent disappearing
       enablePan={false} // Disable panning to prevent disappearing
       autoRotate={autoRotate}
-      autoRotateSpeed={3}
+      autoRotateSpeed={1.5} // Reduced from 3 to 1.5 for slower rotation
       minPolarAngle={Math.PI / 4} // Restrict vertical rotation (minimum)
       maxPolarAngle={Math.PI / 1.5} // Restrict vertical rotation (maximum)
       // Removed azimuth angle restrictions to allow full 360° rotation
