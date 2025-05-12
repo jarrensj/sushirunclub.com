@@ -285,11 +285,11 @@ export default function TreadmillScene() {
         )}
       </Card>
 
-      {/* Responsive header - different text sizes at different breakpoints */}
+      {/* Responsive header - moved down to avoid conflicts with top controls */}
       <h1
         className="absolute w-full text-center font-bold text-slate-800 z-10 px-4
                      text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl
-                     top-4 sm:top-8 md:top-12 lg:top-16 xl:top-20"
+                     top-16 sm:top-20 md:top-24 lg:top-28 xl:top-32"
       >
         Sushi Run Club
       </h1>
@@ -332,7 +332,10 @@ function CameraController({ autoRotate }) {
   return (
     <OrbitControls
       ref={controlsRef}
-      enableZoom={false} // Disable zoom to prevent disappearing
+      enableZoom={true} // Enable zoom functionality
+      minDistance={2} // Minimum zoom distance
+      maxDistance={10} // Maximum zoom distance
+      zoomSpeed={0.5} // Adjust zoom speed
       enablePan={false} // Disable panning to prevent disappearing
       autoRotate={autoRotate}
       autoRotateSpeed={1.5} // Reduced from 3 to 1.5 for slower rotation
