@@ -176,12 +176,6 @@ export default function TreadmillScene() {
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
-      <div className="absolute top-4 left-4 z-10">
-        <Button onClick={() => setAutoRotate(!autoRotate)} variant="outline" className="bg-white/80 backdrop-blur-sm">
-          {autoRotate ? "Stop Rotation" : "Start Rotation"}
-        </Button>
-      </div>
-
       {/* Distance Tracker */}
       <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
         <CardContent className="p-3 flex flex-col items-end">
@@ -309,6 +303,16 @@ export default function TreadmillScene() {
         </Center>
         <Environment preset="studio" />
       </Canvas>
+      <div className="absolute bottom-4 left-4 z-10">
+        <Button
+          onClick={() => setAutoRotate(!autoRotate)}
+          variant="ghost"
+          size="sm"
+          className="bg-white/50 hover:bg-white/70 backdrop-blur-sm text-slate-600 text-xs rounded-full h-8 px-3"
+        >
+          {autoRotate ? "Stop Rotation" : "Start Rotation"}
+        </Button>
+      </div>
     </div>
   )
 }
