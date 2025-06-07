@@ -74,7 +74,7 @@ export default function TreadmillScene() {
       } else {
         setPanelPosition({
           x: window.innerWidth - 300,
-          y: window.innerHeight - 200,
+          y: window.innerHeight - 300,
         })
       }
     }
@@ -124,7 +124,7 @@ export default function TreadmillScene() {
     if (isMinimized) {
       setPanelPosition({
         x: window.innerWidth - 300,
-        y: window.innerHeight - 200,
+        y: window.innerHeight - 300,
       })
     } else {
       // If minimizing, move to bottom right
