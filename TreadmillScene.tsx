@@ -21,10 +21,18 @@ export default function TreadmillScene() {
   const [isMinimized, setIsMinimized] = useState(true)
   // Position panel in bottom right when minimized
   const [panelPosition, setPanelPosition] = useState({
-    x: typeof window !== "undefined" ? window.innerWidth - 60 : 0,
-    y: typeof window !== "undefined" ? window.innerHeight - 60 : 0,
+    x: 0,
+    y: 0,
   })
   const panelRef = useRef(null)
+
+  // Initialize panel position on client-side
+  useEffect(() => {
+    setPanelPosition({
+      x: window.innerWidth - 40,
+      y: window.innerHeight - 40,
+    })
+  }, [])
 
   // Update distance based on speed
   useEffect(() => {
@@ -60,13 +68,20 @@ export default function TreadmillScene() {
     const handleResize = () => {
       if (isMinimized) {
         setPanelPosition({
-          x: window.innerWidth - 60,
-          y: window.innerHeight - 60,
+          x: window.innerWidth - 40,
+          y: window.innerHeight - 40,
+        })
+      } else {
+        setPanelPosition({
+          x: window.innerWidth - 300,
+          y: window.innerHeight - 200,
         })
       }
     }
 
     window.addEventListener("resize", handleResize)
+    // Set initial position
+    handleResize()
     return () => window.removeEventListener("resize", handleResize)
   }, [isMinimized])
 
@@ -108,14 +123,14 @@ export default function TreadmillScene() {
     // If expanding, move panel to a better position
     if (isMinimized) {
       setPanelPosition({
-        x: Math.max(window.innerWidth - 300, 20),
-        y: Math.max(window.innerHeight - 200, 20),
+        x: window.innerWidth - 300,
+        y: window.innerHeight - 200,
       })
     } else {
       // If minimizing, move to bottom right
       setPanelPosition({
-        x: window.innerWidth - 60,
-        y: window.innerHeight - 60,
+        x: window.innerWidth - 40,
+        y: window.innerHeight - 40,
       })
     }
   }
