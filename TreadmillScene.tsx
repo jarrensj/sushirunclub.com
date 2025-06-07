@@ -15,6 +15,7 @@ export default function TreadmillScene() {
   const [speed, setSpeed] = useState(1) // Speed from 0-3
   const [distance, setDistance] = useState(0) // Distance in kilometers
   const [startTime, setStartTime] = useState(Date.now())
+  const [showDistanceTracker, setShowDistanceTracker] = useState(true)
   const lastUpdateTimeRef = useRef(Date.now())
 
   const [isDragging, setIsDragging] = useState(false)
@@ -192,19 +193,30 @@ export default function TreadmillScene() {
   return (
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
       {/* Distance Tracker */}
-      <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
-        <CardContent className="p-3 flex flex-col items-end">
-          <div className="w-full">
-            <h3 className="text-sm font-medium text-slate-600">Current Run</h3>
-          </div>
-          <div className="flex flex-col items-end mt-1">
-            <div className="flex items-baseline gap-1">
-              <span className="text-2xl font-bold text-slate-800">{formatDistance(distance)}</span>
+      {showDistanceTracker && (
+        <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
+          <CardContent className="p-2 flex flex-col items-end">
+            <div className="w-full flex justify-between items-center">
+              <h3 className="text-xs font-medium text-slate-600">Current Run</h3>
+              <button 
+                onClick={() => setShowDistanceTracker(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
-            <div className="text-xs text-slate-500 mt-1">Time: {getElapsedTime()}</div>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex flex-col items-end">
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-bold text-slate-800">{formatDistance(distance)}</span>
+              </div>
+              <div className="text-xs text-slate-500">Time: {getElapsedTime()}</div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Draggable Speed Control Panel - Minimized or Expanded */}
       <Card
@@ -297,8 +309,8 @@ export default function TreadmillScene() {
       {/* Responsive header - moved down to avoid conflicts with top controls */}
       <h1
         className="absolute w-full text-center font-bold text-slate-800 z-10 px-4
-                     text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl
-                     top-16 sm:top-20 md:top-24 lg:top-28 xl:top-32"
+                     text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl
+                     top-24 sm:top-28 md:top-32 lg:top-36 xl:top-40"
       >
         Sushi Run Club
       </h1>
