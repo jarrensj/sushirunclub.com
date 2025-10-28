@@ -20,6 +20,7 @@ export default function TreadmillScene() {
 
   const [isDragging, setIsDragging] = useState(false)
   const [isMinimized, setIsMinimized] = useState(true)
+  const [isMobile, setIsMobile] = useState(false)
   // Position panel in bottom right when minimized
   const [panelPosition, setPanelPosition] = useState({
     x: 0,
@@ -27,12 +28,20 @@ export default function TreadmillScene() {
   })
   const panelRef = useRef(null)
 
-  // Initialize panel position on client-side
+  // Initialize panel position and detect mobile on client-side
   useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640)
+    }
+    
+    checkMobile()
     setPanelPosition({
       x: window.innerWidth - 40,
       y: window.innerHeight - 40,
     })
+    
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
   // Update distance based on speed
@@ -154,18 +163,43 @@ export default function TreadmillScene() {
       }
     }
 
+    const handleTouchMove = (e) => {
+      if (isDragging && panelRef.current && e.touches.length > 0) {
+        const touch = e.touches[0]
+        const newX = touch.clientX
+        const newY = touch.clientY
+
+        // Keep panel within viewport bounds
+        const maxX = window.innerWidth - (isMinimized ? 40 : 280)
+        const maxY = window.innerHeight - (isMinimized ? 40 : 180)
+
+        setPanelPosition({
+          x: Math.max(0, Math.min(newX, maxX)),
+          y: Math.max(0, Math.min(newY, maxY)),
+        })
+      }
+    }
+
     const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    const handleTouchEnd = () => {
       setIsDragging(false)
     }
 
     if (isDragging) {
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
+      document.addEventListener("touchmove", handleTouchMove)
+      document.addEventListener("touchend", handleTouchEnd)
     }
 
     return () => {
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
+      document.removeEventListener("touchmove", handleTouchMove)
+      document.removeEventListener("touchend", handleTouchEnd)
     }
   }, [isDragging, isMinimized])
 
@@ -194,8 +228,8 @@ export default function TreadmillScene() {
     <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
       {/* Distance Tracker */}
       {showDistanceTracker && (
-        <Card className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
-          <CardContent className="p-2 flex flex-col items-end">
+        <Card className="absolute top-2 right-2 sm:top-4 sm:right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
+          <CardContent className="p-1.5 sm:p-2 flex flex-col items-end">
             <div className="w-full flex justify-between items-center">
               <h3 className="text-xs font-medium text-slate-600">Current Run</h3>
               <button 
@@ -218,36 +252,49 @@ export default function TreadmillScene() {
         </Card>
       )}
 
-      {/* Draggable Speed Control Panel - Minimized or Expanded */}
-      <Card
-        ref={panelRef}
-        className={`absolute z-10 backdrop-blur-sm shadow-lg cursor-move transition-all duration-200 ${
-          isMinimized ? "w-12 h-12 rounded-full bg-white/90" : "w-64 bg-white/90"
-        }`}
-        style={{
-          left: `${panelPosition.x}px`,
-          top: `${panelPosition.y}px`,
-          touchAction: "none",
-          transform: isMinimized ? "translate(-50%, -50%)" : "translate(0, 0)",
-        }}
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
-            e.preventDefault()
-            setIsDragging(true)
-          }
-        }}
-        onTouchStart={(e) => {
-          const touch = e.touches[0]
-          setPanelPosition({
-            x: touch.clientX,
-            y: touch.clientY,
-          })
-          setIsDragging(true)
-        }}
-      >
+      {/* Draggable Speed Control Panel - Minimized or Expanded (Hidden on Mobile) */}
+      {!isMobile && (
+        <Card
+          ref={panelRef}
+          className={`absolute z-10 backdrop-blur-sm shadow-lg cursor-move transition-all duration-200 ${
+            isMinimized ? "w-12 h-12 rounded-full bg-white/90" : "w-64 bg-white/90"
+          }`}
+          style={{
+            left: `${panelPosition.x}px`,
+            top: `${panelPosition.y}px`,
+            touchAction: "none",
+            transform: isMinimized ? "translate(-50%, -50%)" : "translate(0, 0)",
+          }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
+              e.preventDefault()
+              setIsDragging(true)
+            }
+          }}
+          onTouchStart={(e) => {
+            if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
+              e.preventDefault()
+              setIsDragging(true)
+            }
+          }}
+        >
         {isMinimized ? (
           // Minimized view - just a circular button with speed indicator
-          <div className="w-full h-full flex items-center justify-center relative" onClick={toggleMinimized}>
+          <div 
+            className="w-full h-full flex items-center justify-center relative" 
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!isDragging) {
+                toggleMinimized()
+              }
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation()
+              if (!isDragging) {
+                toggleMinimized()
+              }
+            }}
+          >
             <div className="absolute inset-0 flex items-center justify-center">
               <Settings className="h-5 w-5 text-slate-600" />
             </div>
@@ -261,7 +308,23 @@ export default function TreadmillScene() {
                   <GripVertical className="h-4 w-4 text-slate-400" />
                   <h3 className="text-lg font-medium">Treadmill Speed</h3>
                 </div>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={toggleMinimized}>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6" 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!isDragging) {
+                      toggleMinimized()
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    e.stopPropagation()
+                    if (!isDragging) {
+                      toggleMinimized()
+                    }
+                  }}
+                >
                   <ChevronDown className="h-4 w-4" />
                 </Button>
               </div>
@@ -305,6 +368,7 @@ export default function TreadmillScene() {
           </CardContent>
         )}
       </Card>
+      )}
 
       {/* Responsive header - moved down to avoid conflicts with top controls */}
       <h1
