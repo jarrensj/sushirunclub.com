@@ -364,6 +364,14 @@ export default function TreadmillScene() {
                   </>
                 )}
               </Button>
+
+              <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={() => setAutoRotate(!autoRotate)}
+              >
+                {autoRotate ? "Stop Rotation" : "Start Rotation"}
+              </Button>
             </div>
           </CardContent>
         )}
@@ -394,16 +402,6 @@ export default function TreadmillScene() {
         </Center>
         <Environment preset="studio" />
       </Canvas>
-      <div className="absolute bottom-4 left-4 z-10">
-        <Button
-          onClick={() => setAutoRotate(!autoRotate)}
-          variant="ghost"
-          size="sm"
-          className="bg-white/50 hover:bg-white/70 backdrop-blur-sm text-slate-600 text-xs rounded-full h-8 px-3"
-        >
-          {autoRotate ? "Stop Rotation" : "Start Rotation"}
-        </Button>
-      </div>
     </div>
   )
 }
