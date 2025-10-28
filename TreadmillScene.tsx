@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings } from "lucide-react"
 
 export default function TreadmillScene() {
-  const [autoRotate, setAutoRotate] = useState(true)
+  const [autoRotate, setAutoRotate] = useState(false)
   const [key, setKey] = useState(0) // Used to force re-render and reset position
   const [isRunning, setIsRunning] = useState(true)
   const [speed, setSpeed] = useState(1) // Speed from 0-3
