@@ -386,6 +386,15 @@ export default function TreadmillScene() {
       >
         Sushi Run Club
       </h1>
+      
+      {/* Contact prompt below header */}
+      <p
+        className="absolute w-full text-center text-slate-600 z-10 px-4
+                     text-sm sm:text-base md:text-lg lg:text-xl
+                     top-36 sm:top-40 md:top-44 lg:top-48 xl:top-52"
+      >
+        wanna host a run? contact us
+      </p>
 
       <Canvas
         key={key}
