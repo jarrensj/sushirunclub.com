@@ -1,806 +1,332 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import { Canvas, useThree, useFrame } from "@react-three/fiber"
-import { Center, Environment, OrbitControls } from "@react-three/drei"
-import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
-import { Card, CardContent } from "@/components/ui/card"
-import { Minus, Plus, Play, Pause, GripVertical, ChevronDown, Settings } from "lucide-react"
+import { useEffect, useMemo, useRef } from "react"
+import { Canvas, useFrame, useThree } from "@react-three/fiber"
+import * as THREE from "three"
+
+// fitAspect is the narrowest aspect ratio that view frames the whole treadmill at;
+// on anything narrower the camera backs away to keep it in frame.
+const WIDE_VIEW = { position: new THREE.Vector3(3.3, 2.7, 3.6), fitAspect: 1.25 }
+const TALL_VIEW = { position: new THREE.Vector3(0.9, 3.4, 3.8), fitAspect: 0.85 }
+// Slightly off the treadmill's center to balance out the perspective of the near end.
+const LOOK_AT = new THREE.Vector3(-0.21, -0.05, -0.03)
+
+// Ordered from empty to dense: brighter surfaces get heavier glyphs.
+const GLYPHS = " .:-=+*#%@"
+
+const asciiVertexShader = /* glsl */ `
+  void main() {
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`
+
+const asciiFragmentShader = /* glsl */ `
+  uniform sampler2D uScene;
+  uniform sampler2D uGlyphs;
+  uniform vec2 uCell;
+  uniform vec2 uGrid;
+  uniform float uGlyphCount;
+
+  void main() {
+    vec2 position = gl_FragCoord.xy / uCell;
+    vec2 cell = floor(position);
+
+    // The scene target is linear, so convert it to display values first.
+    vec3 color = pow(texture2D(uScene, (cell + 0.5) / uGrid).rgb, vec3(1.0 / 2.2));
+    float peak = max(color.r, max(color.g, color.b));
+
+    // Weight toward the strongest channel so saturated colors like red aren't left with sparse glyphs.
+    float density = mix(dot(color, vec3(0.299, 0.587, 0.114)), peak, 0.6);
+    float glyph = floor(min(density, 0.999) * uGlyphCount);
+    float mask = texture2D(uGlyphs, vec2((glyph + fract(position.x)) / uGlyphCount, fract(position.y))).r;
+
+    // Keep colors vivid even on dim surfaces, while greys stay dim so the sushi stand out.
+    float saturation = (peak - min(color.r, min(color.g, color.b))) / max(peak, 0.001);
+    vec3 ink = mix(color, color / max(peak, 0.001), saturation);
+
+    gl_FragColor = vec4(ink * mask, mask);
+  }
+`
 
 export default function TreadmillScene() {
-  const [autoRotate, setAutoRotate] = useState(false)
-  const [key, setKey] = useState(0) // Used to force re-render and reset position
-  const [isRunning, setIsRunning] = useState(true)
-  const [speed, setSpeed] = useState(1) // Speed from 0-3
-  const [distance, setDistance] = useState(0) // Distance in kilometers
-  const [startTime, setStartTime] = useState(Date.now())
-  const [showDistanceTracker, setShowDistanceTracker] = useState(true)
-  const lastUpdateTimeRef = useRef(Date.now())
-
-  const [isDragging, setIsDragging] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(true)
-  const [isMobile, setIsMobile] = useState(false)
-  // Position panel in bottom right when minimized
-  const [panelPosition, setPanelPosition] = useState({
-    x: 0,
-    y: 0,
-  })
-  const panelRef = useRef(null)
-
-  // Initialize panel position and detect mobile on client-side
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 640)
-    }
-    
-    checkMobile()
-    setPanelPosition({
-      x: window.innerWidth - 40,
-      y: window.innerHeight - 40,
-    })
-    
-    window.addEventListener('resize', checkMobile)
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
-
-  // Update distance based on speed
-  useEffect(() => {
-    if (!isRunning) {
-      lastUpdateTimeRef.current = Date.now()
-      return
-    }
-
-    const intervalId = setInterval(() => {
-      const now = Date.now()
-      const elapsedSeconds = (now - lastUpdateTimeRef.current) / 1000
-
-      // Convert speed (mph) to km/h and calculate distance
-      const speedInKmh = speed * 1.60934
-      const distanceInKm = (speedInKmh * elapsedSeconds) / 3600
-
-      setDistance((prev) => prev + distanceInKm)
-      lastUpdateTimeRef.current = now
-    }, 1000) // Update every second
-
-    return () => clearInterval(intervalId)
-  }, [isRunning, speed])
-
-  // Reset distance and start time
-  const resetDistance = () => {
-    setDistance(0)
-    setStartTime(Date.now())
-    lastUpdateTimeRef.current = Date.now()
-  }
-
-  // Update panel position on window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (isMinimized) {
-        setPanelPosition({
-          x: window.innerWidth - 40,
-          y: window.innerHeight - 40,
-        })
-      } else {
-        setPanelPosition({
-          x: window.innerWidth - 300,
-          y: window.innerHeight - 300,
-        })
-      }
-    }
-
-    window.addEventListener("resize", handleResize)
-    // Set initial position
-    handleResize()
-    return () => window.removeEventListener("resize", handleResize)
-  }, [isMinimized])
-
-  // Handle speed changes
-  const increaseSpeed = () => {
-    setSpeed((prev) => Math.min(prev + 0.5, 3))
-    if (!isRunning && speed > 0) setIsRunning(true)
-  }
-
-  const decreaseSpeed = () => {
-    setSpeed((prev) => Math.max(prev - 0.5, 0))
-    if (speed <= 0.5) {
-      setIsRunning(false)
-    }
-  }
-
-  const toggleRunning = () => {
-    if (!isRunning) {
-      setIsRunning(true)
-      lastUpdateTimeRef.current = Date.now()
-      if (speed === 0) setSpeed(1)
-    } else {
-      setIsRunning(false)
-    }
-  }
-
-  const handleSliderChange = (value: number[]) => {
-    const newSpeed = value[0]
-    setSpeed(newSpeed)
-    setIsRunning(newSpeed > 0)
-    if (newSpeed > 0 && !isRunning) {
-      lastUpdateTimeRef.current = Date.now()
-    }
-  }
-
-  const toggleMinimized = () => {
-    setIsMinimized(!isMinimized)
-
-    // If expanding, move panel to a better position
-    if (isMinimized) {
-      setPanelPosition({
-        x: window.innerWidth - 300,
-        y: window.innerHeight - 300,
-      })
-    } else {
-      // If minimizing, move to bottom right
-      setPanelPosition({
-        x: window.innerWidth - 40,
-        y: window.innerHeight - 40,
-      })
-    }
-  }
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (isDragging && panelRef.current) {
-        // Calculate new position
-        const newX = e.clientX
-        const newY = e.clientY
-
-        // Keep panel within viewport bounds
-        const maxX = window.innerWidth - (isMinimized ? 40 : 280)
-        const maxY = window.innerHeight - (isMinimized ? 40 : 180)
-
-        setPanelPosition({
-          x: Math.max(0, Math.min(newX, maxX)),
-          y: Math.max(0, Math.min(newY, maxY)),
-        })
-      }
-    }
-
-    const handleTouchMove = (e) => {
-      if (isDragging && panelRef.current && e.touches.length > 0) {
-        const touch = e.touches[0]
-        const newX = touch.clientX
-        const newY = touch.clientY
-
-        // Keep panel within viewport bounds
-        const maxX = window.innerWidth - (isMinimized ? 40 : 280)
-        const maxY = window.innerHeight - (isMinimized ? 40 : 180)
-
-        setPanelPosition({
-          x: Math.max(0, Math.min(newX, maxX)),
-          y: Math.max(0, Math.min(newY, maxY)),
-        })
-      }
-    }
-
-    const handleMouseUp = () => {
-      setIsDragging(false)
-    }
-
-    const handleTouchEnd = () => {
-      setIsDragging(false)
-    }
-
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
-      document.addEventListener("touchmove", handleTouchMove)
-      document.addEventListener("touchend", handleTouchEnd)
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
-      document.removeEventListener("touchmove", handleTouchMove)
-      document.removeEventListener("touchend", handleTouchEnd)
-    }
-  }, [isDragging, isMinimized])
-
-  // Format distance for display
-  const formatDistance = (km) => {
-    if (km < 0.01) {
-      return `${(km * 1000).toFixed(0)} m`
-    } else if (km < 1) {
-      return `${(km * 1000).toFixed(0)} m`
-    } else {
-      return `${km.toFixed(2)} km`
-    }
-  }
-
-  // Calculate elapsed time
-  const getElapsedTime = () => {
-    const elapsedMs = Date.now() - startTime
-    const seconds = Math.floor((elapsedMs / 1000) % 60)
-    const minutes = Math.floor((elapsedMs / (1000 * 60)) % 60)
-    const hours = Math.floor(elapsedMs / (1000 * 60 * 60))
-
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-  }
-
   return (
-    <div className="relative w-full h-screen bg-gradient-to-b from-slate-50 to-slate-200">
-      {/* Distance Tracker */}
-      {showDistanceTracker && (
-        <Card className="absolute top-2 right-2 sm:top-4 sm:right-4 z-10 bg-white/90 backdrop-blur-sm shadow-lg">
-          <CardContent className="p-1.5 sm:p-2 flex flex-col items-end">
-            <div className="w-full flex justify-between items-center">
-              <h3 className="text-xs font-medium text-slate-600">Current Run</h3>
-              <button 
-                onClick={() => setShowDistanceTracker(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
-            <div className="flex flex-col items-end">
-              <div className="flex items-baseline gap-1">
-                <span className="text-lg font-bold text-slate-800">{formatDistance(distance)}</span>
-              </div>
-              <div className="text-xs text-slate-500">Time: {getElapsedTime()}</div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Draggable Speed Control Panel - Minimized or Expanded (Hidden on Mobile) */}
-      {!isMobile && (
-        <Card
-          ref={panelRef}
-          className={`absolute z-10 backdrop-blur-sm shadow-lg cursor-move transition-all duration-200 ${
-            isMinimized ? "w-12 h-12 rounded-full bg-white/90" : "w-64 bg-white/90"
-          }`}
-          style={{
-            left: `${panelPosition.x}px`,
-            top: `${panelPosition.y}px`,
-            touchAction: "none",
-            transform: isMinimized ? "translate(-50%, -50%)" : "translate(0, 0)",
-          }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
-              e.preventDefault()
-              setIsDragging(true)
-            }
-          }}
-          onTouchStart={(e) => {
-            if (e.target === e.currentTarget || e.target.closest(".drag-handle")) {
-              e.preventDefault()
-              setIsDragging(true)
-            }
-          }}
-        >
-        {isMinimized ? (
-          // Minimized view - just a circular button with speed indicator
-          <div 
-            className="w-full h-full flex items-center justify-center relative" 
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!isDragging) {
-                toggleMinimized()
-              }
-            }}
-            onTouchEnd={(e) => {
-              e.stopPropagation()
-              if (!isDragging) {
-                toggleMinimized()
-              }
-            }}
-          >
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Settings className="h-5 w-5 text-slate-600" />
-            </div>
-          </div>
-        ) : (
-          // Expanded view
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between drag-handle">
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-4 w-4 text-slate-400" />
-                  <h3 className="text-lg font-medium">Treadmill Speed</h3>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6" 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (!isDragging) {
-                      toggleMinimized()
-                    }
-                  }}
-                  onTouchEnd={(e) => {
-                    e.stopPropagation()
-                    if (!isDragging) {
-                      toggleMinimized()
-                    }
-                  }}
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-medium bg-slate-100 px-2 py-1 rounded">{speed.toFixed(1)} mph</span>
-                <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-green-500" : "bg-red-500"}`}></span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={decreaseSpeed} disabled={speed <= 0} className="h-8 w-8">
-                  <Minus className="h-4 w-4" />
-                </Button>
-
-                <Slider
-                  value={[speed]}
-                  min={0}
-                  max={3}
-                  step={0.1}
-                  className="flex-1"
-                  onValueChange={handleSliderChange}
-                />
-
-                <Button variant="outline" size="icon" onClick={increaseSpeed} disabled={speed >= 3} className="h-8 w-8">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <Button variant={isRunning ? "destructive" : "default"} className="w-full" onClick={toggleRunning}>
-                {isRunning ? (
-                  <>
-                    <Pause className="h-4 w-4 mr-2" /> Pause
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4 mr-2" /> Start
-                  </>
-                )}
-              </Button>
-
-              <Button 
-                variant="outline" 
-                className="w-full" 
-                onClick={() => setAutoRotate(!autoRotate)}
-              >
-                {autoRotate ? "Stop Rotation" : "Start Rotation"}
-              </Button>
-            </div>
-          </CardContent>
-        )}
-      </Card>
-      )}
-
-      {/* Responsive header - moved down to avoid conflicts with top controls */}
-      <h1
-        className="absolute w-full text-center font-bold text-slate-800 z-10 px-4
-                     text-xl sm:text-2xl md:text-3xl lg:text-4xl xl:text-5xl
-                     top-24 sm:top-28 md:top-32 lg:top-36 xl:top-40"
-      >
-        Sushi Run Club
-      </h1>
-
-      <Canvas
-        key={key}
-        camera={{ position: [0, 2, 5], fov: 45, near: 0.1, far: 1000 }}
-        onCreated={({ gl }) => {
-          gl.setClearColor("#f8fafc") // Match background color
-        }}
-      >
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1} />
-        <Center>
-          <CameraController autoRotate={autoRotate} />
-          <WalkingTreadmill isRunning={isRunning} speed={speed} />
-        </Center>
-        <Environment preset="studio" />
+    <div className="fixed inset-0">
+      <h1 className="sr-only">Sushi Run Club</h1>
+      <Canvas camera={{ fov: 35 }}>
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[-1, 5, 3]} intensity={2.6} />
+        <FramedCamera />
+        <WalkingTreadmill />
+        <AsciiRenderer />
       </Canvas>
     </div>
   )
 }
 
-// Custom camera controller component
-function CameraController({ autoRotate }) {
-  const controlsRef = useRef()
-  const { camera } = useThree()
+function FramedCamera() {
+  const camera = useThree((state) => state.camera)
+  const aspect = useThree((state) => state.viewport.aspect)
 
-  // Set up the camera and controls
   useEffect(() => {
-    if (controlsRef.current) {
-      // Set the camera to look at the treadmill
-      camera.lookAt(0, 0.3, 0)
+    const { position, fitAspect } = aspect < 1 ? TALL_VIEW : WIDE_VIEW
+    camera.position.copy(position).multiplyScalar(Math.max(1, fitAspect / aspect))
+    camera.lookAt(LOOK_AT)
+  }, [camera, aspect])
 
-      // Update the controls
-      controlsRef.current.update()
-    }
-  }, [camera])
-
-  return (
-    <OrbitControls
-      ref={controlsRef}
-      enableZoom={true} // Enable zoom functionality
-      minDistance={2} // Minimum zoom distance
-      maxDistance={10} // Maximum zoom distance
-      zoomSpeed={0.5} // Adjust zoom speed
-      enablePan={false} // Disable panning to prevent disappearing
-      autoRotate={autoRotate}
-      autoRotateSpeed={1.5} // Reduced from 3 to 1.5 for slower rotation
-      minPolarAngle={Math.PI / 4} // Restrict vertical rotation (minimum)
-      maxPolarAngle={Math.PI / 1.5} // Restrict vertical rotation (maximum)
-      // Removed azimuth angle restrictions to allow full 360° rotation
-      rotateSpeed={0.5} // Slower rotation for better control
-      dampingFactor={0.1} // Add damping for smoother controls
-      enableDamping={true} // Enable damping
-    />
-  )
+  return null
 }
 
-// Salmon Nigiri Sushi component
-function SalmonNigiri({ isRunning, speed, position = [0, 0.4, 0], rotationOffset = 0 }) {
-  const sushiRef = useRef()
-  const [bounce, setBounce] = useState(rotationOffset)
-  const [rotation, setRotation] = useState(rotationOffset)
+// Takes over R3F's render loop: draws the scene into a low-resolution target, then
+// paints one colored glyph per character cell from it.
+function AsciiRenderer() {
+  const { width, height } = useThree((state) => state.size)
+  const dpr = useThree((state) => state.viewport.dpr)
 
-  // Animation for the sushi
-  useFrame((state, delta) => {
-    if (sushiRef.current) {
-      // Bounce and rotate the sushi when running
-      if (isRunning) {
-        // Simulate running bounce
-        setBounce((prev) => {
-          const newBounce = prev + delta * 10 * speed
-          return newBounce % (Math.PI * 2)
-        })
+  const target = useMemo(() => new THREE.WebGLRenderTarget(1, 1), [])
+  const screen = useMemo(() => {
+    const material = new THREE.ShaderMaterial({
+      vertexShader: asciiVertexShader,
+      fragmentShader: asciiFragmentShader,
+      uniforms: {
+        uScene: { value: target.texture },
+        uGlyphs: { value: null },
+        uCell: { value: new THREE.Vector2() },
+        uGrid: { value: new THREE.Vector2() },
+        uGlyphCount: { value: GLYPHS.length },
+      },
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NoBlending,
+    })
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material)
+    quad.frustumCulled = false
 
-        // Simulate rotation as it runs
-        setRotation((prev) => {
-          const newRotation = prev + delta * 5 * speed
-          return newRotation % (Math.PI * 2)
-        })
-      }
+    const scene = new THREE.Scene()
+    scene.add(quad)
+    return { scene, camera: new THREE.Camera(), uniforms: material.uniforms }
+  }, [target])
 
-      // Apply the bounce and rotation
-      sushiRef.current.position.y = position[1] + Math.abs(Math.sin(bounce) * 0.05 * speed)
-      sushiRef.current.rotation.z = Math.sin(bounce * 2) * 0.1 * speed
-      sushiRef.current.rotation.x = rotation
-    }
+  useEffect(() => {
+    // Smaller cells on small screens so the sushi keep enough characters to read.
+    const cssCellWidth = THREE.MathUtils.clamp(Math.round(Math.min(width, height) / 110), 5, 9)
+    const cellWidth = Math.round(cssCellWidth * dpr)
+    const cellHeight = Math.round(cssCellWidth * 1.8 * dpr)
+    const columns = (width * dpr) / cellWidth
+    const rows = (height * dpr) / cellHeight
+
+    const glyphs = createGlyphAtlas(cellWidth, cellHeight)
+    screen.uniforms.uGlyphs.value = glyphs
+    screen.uniforms.uCell.value.set(cellWidth, cellHeight)
+    screen.uniforms.uGrid.value.set(columns, rows)
+    // Twice the grid resolution, so each linear sample averages the cell and thin parts don't flicker.
+    target.setSize(Math.ceil(columns) * 2, Math.ceil(rows) * 2)
+
+    return () => glyphs.dispose()
+  }, [width, height, dpr, screen, target])
+
+  useEffect(() => () => target.dispose(), [target])
+
+  useFrame(({ gl, scene, camera }) => {
+    gl.setRenderTarget(target)
+    gl.render(scene, camera)
+    gl.setRenderTarget(null)
+    gl.render(screen.scene, screen.camera)
+  }, 1)
+
+  return null
+}
+
+function createGlyphAtlas(cellWidth: number, cellHeight: number) {
+  const canvas = document.createElement("canvas")
+  canvas.width = cellWidth * GLYPHS.length
+  canvas.height = cellHeight
+
+  const context = canvas.getContext("2d")!
+  context.fillStyle = "#000"
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = "#fff"
+  context.font = `bold ${Math.round(cellHeight * 0.9)}px ui-monospace, Menlo, Consolas, monospace`
+  context.textAlign = "center"
+  context.textBaseline = "middle"
+  Array.from(GLYPHS).forEach((glyph, index) => {
+    context.fillText(glyph, (index + 0.5) * cellWidth, cellHeight / 2)
+  })
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.minFilter = THREE.NearestFilter
+  texture.magFilter = THREE.NearestFilter
+  texture.generateMipmaps = false
+  return texture
+}
+
+type Radii = [number, number, number]
+
+const SUSHI_SCALE = 1.2
+const STRIDE_RATE = 10
+const TOPPING_Y = 0.22
+const TOPPING_RADII: Radii = [0.5, 0.14, 0.32]
+const STRIPE_RADII: Radii = [0.507, 0.142, 0.325]
+const NORI_RADII: Radii = [0.52, 0.4, 0.34]
+
+type NigiriProps = {
+  position: [number, number, number]
+  phase: number
+  toppingColor: string
+  stripeColor?: string
+  noriBand?: boolean
+}
+
+function Nigiri({ position, phase, toppingColor, stripeColor, noriBand = false }: NigiriProps) {
+  const sushiRef = useRef<THREE.Group>(null)
+
+  useFrame(({ clock }) => {
+    const sushi = sushiRef.current
+    if (!sushi) return
+
+    const stride = phase + clock.elapsedTime * STRIDE_RATE
+    sushi.position.y = position[1] + Math.abs(Math.sin(stride)) * 0.2
+    sushi.rotation.z = Math.sin(stride) * 0.12
+    sushi.rotation.x = Math.cos(stride) * 0.12
   })
 
   return (
-    <group ref={sushiRef} position={position} scale={0.2}>
-      {/* Rice Base - simple shape with no protruding elements */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[0.8, 0.3, 0.5]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
+    <group ref={sushiRef} position={position} scale={SUSHI_SCALE}>
+      {/* Rice */}
+      <mesh scale={[0.42, 0.26, 0.28]}>
+        <sphereGeometry args={[1, 32, 24]} />
+        <meshStandardMaterial color="#f8f8f0" />
       </mesh>
 
-      {/* Slightly rounded top of rice */}
-      <mesh position={[0, 0.15, 0]}>
-        <boxGeometry args={[0.78, 0.05, 0.48]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
+      {/* Topping */}
+      <mesh position={[0, TOPPING_Y, 0]} scale={TOPPING_RADII}>
+        <sphereGeometry args={[1, 32, 24]} />
+        <meshStandardMaterial color={toppingColor} />
       </mesh>
 
-      {/* Salmon Topping - clean rectangular piece */}
-      <mesh position={[0, 0.2, 0]}>
-        <boxGeometry args={[0.85, 0.08, 0.55]} />
-        <meshStandardMaterial color="#ff9470" roughness={0.6} />
-      </mesh>
+      {/* Topping texture */}
+      {stripeColor &&
+        [-0.24, 0, 0.24].map((x) => (
+          <Strip key={x} y={TOPPING_Y} radii={STRIPE_RADII} x={x} halfWidth={0.045} color={stripeColor} />
+        ))}
 
-      {/* Slightly rounded front edge of salmon */}
-      <mesh position={[0, 0.2, 0.27]}>
-        <boxGeometry args={[0.85, 0.08, 0.02]} />
-        <meshStandardMaterial color="#ff9470" roughness={0.6} />
-      </mesh>
-
-      {/* Slightly rounded back edge of salmon */}
-      <mesh position={[0, 0.2, -0.27]}>
-        <boxGeometry args={[0.85, 0.08, 0.02]} />
-        <meshStandardMaterial color="#ff9470" roughness={0.6} />
-      </mesh>
-
-      {/* Salmon texture lines */}
-      {Array.from({ length: 3 }).map((_, i) => (
-        <mesh key={i} position={[0, 0.25, -0.1 + i * 0.1]}>
-          <boxGeometry args={[0.84, 0.01, 0.01]} />
-          <meshStandardMaterial color="#ff8060" roughness={0.6} />
-        </mesh>
-      ))}
-
-      {/* Small Wasabi Dab between rice and fish */}
-      <mesh position={[0, 0.16, 0]}>
-        <sphereGeometry args={[0.05, 16, 16]} />
-        <meshStandardMaterial color="#7fbc3b" roughness={0.7} />
-      </mesh>
+      {noriBand && <Strip y={0.05} radii={NORI_RADII} x={0} halfWidth={0.12} color="#223322" />}
     </group>
   )
 }
 
-// Tuna Nigiri Sushi component
-function TunaNigiri({ isRunning, speed, position = [0, 0.4, 0], rotationOffset = 0 }) {
-  const sushiRef = useRef()
-  const [bounce, setBounce] = useState(rotationOffset)
-  const [rotation, setRotation] = useState(rotationOffset)
-
-  // Animation for the sushi
-  useFrame((state, delta) => {
-    if (sushiRef.current) {
-      // Bounce and rotate the sushi when running
-      if (isRunning) {
-        // Simulate running bounce
-        setBounce((prev) => {
-          const newBounce = prev + delta * 10 * speed
-          return newBounce % (Math.PI * 2)
-        })
-
-        // Simulate rotation as it runs
-        setRotation((prev) => {
-          const newRotation = prev + delta * 5 * speed
-          return newRotation % (Math.PI * 2)
-        })
-      }
-
-      // Apply the bounce and rotation
-      sushiRef.current.position.y = position[1] + Math.abs(Math.sin(bounce) * 0.05 * speed)
-      sushiRef.current.rotation.z = Math.sin(bounce * 2) * 0.1 * speed
-      sushiRef.current.rotation.x = rotation
-    }
-  })
+// A slice across an ellipsoid at a given x, so it wraps the curved surface like a strip.
+function Strip({
+  y,
+  radii: [radiusX, radiusY, radiusZ],
+  x,
+  halfWidth,
+  color,
+}: {
+  y: number
+  radii: Radii
+  x: number
+  halfWidth: number
+  color: string
+}) {
+  const thetaStart = Math.acos((x + halfWidth) / radiusX)
+  const thetaLength = Math.acos((x - halfWidth) / radiusX) - thetaStart
 
   return (
-    <group ref={sushiRef} position={position} scale={0.2}>
-      {/* Rice Base - simple shape with no protruding elements */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[0.8, 0.3, 0.5]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
-      </mesh>
-
-      {/* Slightly rounded top of rice */}
-      <mesh position={[0, 0.15, 0]}>
-        <boxGeometry args={[0.78, 0.05, 0.48]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
-      </mesh>
-
-      {/* Tuna Topping - clean rectangular piece (darker red) */}
-      <mesh position={[0, 0.2, 0]}>
-        <boxGeometry args={[0.85, 0.08, 0.55]} />
-        <meshStandardMaterial color="#cc3333" roughness={0.6} />
-      </mesh>
-
-      {/* Slightly rounded front edge of tuna */}
-      <mesh position={[0, 0.2, 0.27]}>
-        <boxGeometry args={[0.85, 0.08, 0.02]} />
-        <meshStandardMaterial color="#cc3333" roughness={0.6} />
-      </mesh>
-
-      {/* Slightly rounded back edge of tuna */}
-      <mesh position={[0, 0.2, -0.27]}>
-        <boxGeometry args={[0.85, 0.08, 0.02]} />
-        <meshStandardMaterial color="#cc3333" roughness={0.6} />
-      </mesh>
-
-      {/* Tuna texture lines */}
-      {Array.from({ length: 3 }).map((_, i) => (
-        <mesh key={i} position={[0, 0.25, -0.1 + i * 0.1]}>
-          <boxGeometry args={[0.84, 0.01, 0.01]} />
-          <meshStandardMaterial color="#aa2222" roughness={0.6} />
-        </mesh>
-      ))}
-
-      {/* Small Wasabi Dab between rice and fish */}
-      <mesh position={[0, 0.16, 0]}>
-        <sphereGeometry args={[0.05, 16, 16]} />
-        <meshStandardMaterial color="#7fbc3b" roughness={0.7} />
-      </mesh>
-    </group>
+    <mesh position={[0, y, 0]} rotation={[0, 0, -Math.PI / 2]} scale={[radiusY, radiusX, radiusZ]}>
+      <sphereGeometry args={[1, 32, 6, 0, Math.PI * 2, thetaStart, thetaLength]} />
+      <meshStandardMaterial color={color} />
+    </mesh>
   )
 }
 
-// Tamago (Egg) Nigiri Sushi component
-function TamagoNigiri({ isRunning, speed, position = [0, 0.4, 0], rotationOffset = 0 }) {
-  const sushiRef = useRef()
-  const [bounce, setBounce] = useState(rotationOffset)
-  const [rotation, setRotation] = useState(rotationOffset)
+const BELT_LENGTH = 3.8
+const TREAD_BARS = 14
+const BELT_SPEED = 1
 
-  // Animation for the sushi
-  useFrame((state, delta) => {
-    if (sushiRef.current) {
-      // Bounce and rotate the sushi when running
-      if (isRunning) {
-        // Simulate running bounce
-        setBounce((prev) => {
-          const newBounce = prev + delta * 10 * speed
-          return newBounce % (Math.PI * 2)
-        })
+function WalkingTreadmill() {
+  const beltRef = useRef<THREE.Group>(null)
 
-        // Simulate rotation as it runs
-        setRotation((prev) => {
-          const newRotation = prev + delta * 5 * speed
-          return newRotation % (Math.PI * 2)
-        })
-      }
-
-      // Apply the bounce and rotation
-      sushiRef.current.position.y = position[1] + Math.abs(Math.sin(bounce) * 0.05 * speed)
-      sushiRef.current.rotation.z = Math.sin(bounce * 2) * 0.1 * speed
-      sushiRef.current.rotation.x = rotation
-    }
+  useFrame(({ clock }) => {
+    beltRef.current?.children.forEach((bar, index) => {
+      const travelled = (index / TREAD_BARS) * BELT_LENGTH + clock.elapsedTime * BELT_SPEED
+      bar.position.z = (travelled % BELT_LENGTH) - BELT_LENGTH / 2
+    })
   })
 
   return (
-    <group ref={sushiRef} position={position} scale={0.2}>
-      {/* Rice Base - simple shape with no protruding elements */}
-      <mesh position={[0, 0, 0]}>
-        <boxGeometry args={[0.8, 0.3, 0.5]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
-      </mesh>
-
-      {/* Slightly rounded top of rice */}
-      <mesh position={[0, 0.15, 0]}>
-        <boxGeometry args={[0.78, 0.05, 0.48]} />
-        <meshStandardMaterial color="#f8f8f0" roughness={0.8} />
-      </mesh>
-
-      {/* Tamago (Egg) Topping - slightly taller than fish */}
-      <mesh position={[0, 0.22, 0]}>
-        <boxGeometry args={[0.85, 0.12, 0.55]} />
-        <meshStandardMaterial color="#ffcc44" roughness={0.5} />
-      </mesh>
-
-      {/* Slightly rounded front edge of tamago */}
-      <mesh position={[0, 0.22, 0.27]}>
-        <boxGeometry args={[0.85, 0.12, 0.02]} />
-        <meshStandardMaterial color="#ffcc44" roughness={0.5} />
-      </mesh>
-
-      {/* Slightly rounded back edge of tamago */}
-      <mesh position={[0, 0.22, -0.27]}>
-        <boxGeometry args={[0.85, 0.12, 0.02]} />
-        <meshStandardMaterial color="#ffcc44" roughness={0.5} />
-      </mesh>
-
-      {/* Tamago texture - subtle lines */}
-      {Array.from({ length: 2 }).map((_, i) => (
-        <mesh key={i} position={[0, 0.22 + i * 0.05, 0]}>
-          <boxGeometry args={[0.86, 0.01, 0.56]} />
-          <meshStandardMaterial color="#ffbb22" roughness={0.5} />
-        </mesh>
-      ))}
-
-      {/* Small Nori Strip (seaweed) */}
-      <mesh position={[0, 0.16, 0]}>
-        <boxGeometry args={[0.86, 0.02, 0.56]} />
-        <meshStandardMaterial color="#223322" roughness={0.7} />
-      </mesh>
-    </group>
-  )
-}
-
-function WalkingTreadmill({ isRunning, speed }) {
-  const treadmillRef = useRef()
-  const beltRef = useRef()
-
-  // Animation for the belt movement
-  useFrame((state, delta) => {
-    if (isRunning && beltRef.current) {
-      // Move all the tread marks
-      beltRef.current.children.forEach((child) => {
-        child.position.z += speed * delta * 0.5
-
-        // If a tread mark goes beyond the end, loop it back to the beginning
-        if (child.position.z > 1.9) {
-          child.position.z = -1.9
-        }
-      })
-    }
-  })
-
-  return (
-    <group ref={treadmillRef} position={[0, -0.5, 0]} scale={0.8}>
-      {/* Treadmill Base - low profile for under desk */}
-      <mesh position={[0, 0.1, 0]} rotation={[0, 0, 0]}>
+    <group scale={0.8}>
+      {/* Base */}
+      <mesh position={[0, 0.1, 0]}>
         <boxGeometry args={[2.0, 0.1, 4.0]} />
-        <meshStandardMaterial color="#222222" roughness={0.3} metalness={0.7} />
+        <meshStandardMaterial color="#8a8f98" />
       </mesh>
 
       {/* Bottom Trim */}
-      <mesh position={[0, 0.05, 0]} rotation={[0, 0, 0]}>
+      <mesh position={[0, 0.05, 0]}>
         <boxGeometry args={[2.1, 0.02, 4.1]} />
-        <meshStandardMaterial color="#333333" roughness={0.3} metalness={0.8} />
+        <meshStandardMaterial color="#6b7078" />
       </mesh>
 
-      {/* Running Belt (slightly raised from base) */}
-      <mesh position={[0, 0.16, 0]} rotation={[0, 0, 0]}>
+      {/* Running Belt */}
+      <mesh position={[0, 0.16, 0]}>
         <boxGeometry args={[1.8, 0.03, 3.8]} />
-        <meshStandardMaterial color="#111111" roughness={0.7} />
+        <meshStandardMaterial color="#1c1e22" />
       </mesh>
 
-      {/* Belt Texture/Tread Pattern - now in a group for animation */}
+      {/* Tread bars */}
       <group ref={beltRef}>
-        {Array.from({ length: 38 }).map((_, i) => (
-          <mesh key={i} position={[0, 0.18, -1.9 + i * 0.1]} rotation={[0, 0, 0]}>
-            <boxGeometry args={[1.75, 0.01, 0.05]} />
-            <meshStandardMaterial color="#333333" roughness={0.3} />
+        {Array.from({ length: TREAD_BARS }).map((_, index) => (
+          <mesh key={index} position={[0, 0.18, 0]}>
+            <boxGeometry args={[1.75, 0.01, 0.09]} />
+            <meshStandardMaterial color="#4a4e55" />
           </mesh>
         ))}
       </group>
 
-      {/* Front Roller (where belt wraps around) */}
-      <mesh position={[0, 0.16, -1.9]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.08, 0.08, 1.8, 16]} />
-        <meshStandardMaterial color="#444444" roughness={0.3} metalness={0.5} />
-      </mesh>
+      {/* Rollers */}
+      {[-1.9, 1.9].map((z) => (
+        <mesh key={z} position={[0, 0.16, z]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.08, 0.08, 1.8, 16]} />
+          <meshStandardMaterial color="#9aa0a8" />
+        </mesh>
+      ))}
 
-      {/* Rear Roller (where belt wraps around) */}
-      <mesh position={[0, 0.16, 1.9]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.08, 0.08, 1.8, 16]} />
-        <meshStandardMaterial color="#444444" roughness={0.3} metalness={0.5} />
-      </mesh>
+      {/* Side Rails */}
+      {[-0.95, 0.95].map((x) => (
+        <mesh key={x} position={[x, 0.2, 0]}>
+          <boxGeometry args={[0.05, 0.1, 4.0]} />
+          <meshStandardMaterial color="#c4c8d0" />
+        </mesh>
+      ))}
 
-      {/* Minimal Side Rails - very low profile */}
-      {/* Left Side Rail */}
-      <mesh position={[-0.95, 0.2, 0]} rotation={[0, 0, 0]}>
-        <boxGeometry args={[0.05, 0.1, 4.0]} />
-        <meshStandardMaterial color="#222222" roughness={0.3} metalness={0.7} />
-      </mesh>
-
-      {/* Right Side Rail */}
-      <mesh position={[0.95, 0.2, 0]} rotation={[0, 0, 0]}>
-        <boxGeometry args={[0.05, 0.1, 4.0]} />
-        <meshStandardMaterial color="#222222" roughness={0.3} metalness={0.7} />
-      </mesh>
-
-      {/* Front Control Panel - very minimal */}
+      {/* Control Panel */}
       <mesh position={[0, 0.25, -1.95]} rotation={[Math.PI / 12, 0, 0]}>
         <boxGeometry args={[0.8, 0.1, 0.2]} />
-        <meshStandardMaterial color="#333333" roughness={0.3} metalness={0.7} />
+        <meshStandardMaterial color="#aeb3bb" />
       </mesh>
 
-      {/* Control Panel Display */}
-      <mesh position={[0, 0.27, -1.95]} rotation={[Math.PI / 12, 0, 0]}>
-        <boxGeometry args={[0.6, 0.06, 0.01]} />
-        <meshStandardMaterial color="#1a1a2e" roughness={0.1} emissive="#1a1a2e" emissiveIntensity={0.2} />
-      </mesh>
-
-      {/* LED Display - changes color based on speed */}
-      <mesh position={[0, 0.27, -1.945]} rotation={[Math.PI / 12, 0, 0]}>
-        <boxGeometry args={[0.4, 0.03, 0.005]} />
-        <meshStandardMaterial
-          color={isRunning ? (speed > 2 ? "#ff3300" : speed > 1 ? "#ffaa00" : "#00aaff") : "#666666"}
-          roughness={0.1}
-          emissive={isRunning ? (speed > 2 ? "#ff3300" : speed > 1 ? "#ffaa00" : "#00aaff") : "#666666"}
-          emissiveIntensity={isRunning ? 0.5 : 0.1}
-        />
+      {/* LED Display */}
+      <mesh position={[0, 0.3, -1.93]} rotation={[Math.PI / 12, 0, 0]}>
+        <boxGeometry args={[0.5, 0.02, 0.1]} />
+        <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={0.8} />
       </mesh>
 
       {/* Rubber Feet */}
-      <mesh position={[-0.8, 0.03, -1.8]} rotation={[0, 0, 0]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-        <meshStandardMaterial color="#111111" roughness={0.9} />
-      </mesh>
-      <mesh position={[0.8, 0.03, -1.8]} rotation={[0, 0, 0]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-        <meshStandardMaterial color="#111111" roughness={0.9} />
-      </mesh>
-      <mesh position={[-0.8, 0.03, 1.8]} rotation={[0, 0, 0]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-        <meshStandardMaterial color="#111111" roughness={0.9} />
-      </mesh>
-      <mesh position={[0.8, 0.03, 1.8]} rotation={[0, 0, 0]}>
-        <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
-        <meshStandardMaterial color="#111111" roughness={0.9} />
-      </mesh>
+      {[
+        [-0.8, -1.8],
+        [0.8, -1.8],
+        [-0.8, 1.8],
+        [0.8, 1.8],
+      ].map(([x, z]) => (
+        <mesh key={`${x},${z}`} position={[x, 0.03, z]}>
+          <cylinderGeometry args={[0.05, 0.05, 0.02, 16]} />
+          <meshStandardMaterial color="#6b7078" />
+        </mesh>
+      ))}
 
-      {/* Add the three different Nigiri Sushi types */}
-      <SalmonNigiri isRunning={isRunning} speed={speed} position={[-0.5, 0.4, 0.5]} rotationOffset={0} />
-      <TunaNigiri isRunning={isRunning} speed={speed} position={[0, 0.4, 0]} rotationOffset={Math.PI / 3} />
-      <TamagoNigiri isRunning={isRunning} speed={speed} position={[0.5, 0.4, -0.5]} rotationOffset={Math.PI / 1.5} />
+      <Nigiri position={[-0.3, 0.5, 1.2]} phase={0} toppingColor="#ff9470" stripeColor="#ffe2d6" />
+      <Nigiri position={[0, 0.5, 0.2]} phase={Math.PI / 3} toppingColor="#cc3333" stripeColor="#8f1f1f" />
+      <Nigiri position={[0.3, 0.5, -0.8]} phase={Math.PI / 1.5} toppingColor="#ffcc44" noriBand />
     </group>
   )
 }
